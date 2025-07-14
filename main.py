@@ -50,9 +50,17 @@ rate_limiter = GeminiRateLimiter()
 # ───────────────────────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
 def read_sav(uploaded_file):
-    """uploaded_file è lo Streamlit UploadedFile; converti in bytes."""
-    raw = uploaded_file.getvalue()          # oppure uploaded_file.read()
-    df, meta = pyreadstat.read_sav(raw, apply_value_formats=False)
+    """
+    Salva l’UploadedFile Streamlit in un file temporaneo
+    e lo passa a pyreadstat.read_sav().
+    """
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".sav") as tmp:
+        tmp.write(uploaded_file.getvalue())
+        tmp.flush()           # assicura che tutto sia scritto
+
+        # pyreadstat legge dal path
+        df, meta = pyreadstat.read_sav(tmp.name, apply_value_formats=False)
+
     return df, meta
     
 def variable_view(df, meta):
