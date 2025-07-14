@@ -1,0 +1,9 @@
+streamlit
+pyreadstat
+pandas
+numpy
+scipy
+scikit-learn
+pingouin
+factor_analyzer
+google-generativeai
