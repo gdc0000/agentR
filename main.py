@@ -62,22 +62,24 @@ def read_sav(uploaded_file):
         df, meta = pyreadstat.read_sav(tmp.name, apply_value_formats=False)
 
     return df, meta
-    
+
+def labels_map(meta) -> dict:
+    """
+    Ritorna dict {var_name: var_label}.
+    Gestisce meta.column_labels che è una lista parallela a meta.column_names.
+    """
+    return dict(zip(meta.column_names, meta.column_labels))
+
 def variable_view(df, meta):
-    """
-    Ritorna un DataFrame con var‑name, label, tipo e % missing.
-    Funziona anche se meta.column_labels è una lista.
-    """
-    # Dizionari helper
-    labels_map  = dict(zip(meta.column_names, meta.column_labels))
-    types_map   = getattr(meta, "variable_types", {})
-    value_fmt   = getattr(meta, "variable_value_formats", {})
+    lb = labels_map(meta)           # NEW
+    types_map = getattr(meta, "variable_types", {})
+    value_fmt = getattr(meta, "variable_value_formats", {})
 
     rows = []
     for col in df.columns:
         rows.append({
             "var_name":  col,
-            "label":     labels_map.get(col, ""),
+            "label":     lb.get(col, ""),      # UPDATED
             "type":      types_map.get(col, ""),
             "%missing":  df[col].isna().mean().round(3),
             "min":       df[col].min(skipna=True),
@@ -85,7 +87,6 @@ def variable_view(df, meta):
             "value_fmt": value_fmt.get(col, "")
         })
     return pd.DataFrame(rows)
-
 
 def gemini_embed(texts, model):
     rate_limiter.wait()
@@ -205,9 +206,11 @@ if api_key and uploaded:
 
     # Construct detection
     if st.button("Detect constructs"):
-        labels = [meta.column_labels.get(c, c) or c for c in df.columns]
+        lb = labels_map(meta)                            # NEW
+        labels = [lb.get(c, c) for c in df.columns]      # UPDATED
         constructs_raw = detect_constructs(labels, gemini_model)
         st.session_state.constructs = constructs_raw
+
 
     if "constructs" in st.session_state:
         st.subheader("Confirm constructs")
