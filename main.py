@@ -64,17 +64,28 @@ def read_sav(uploaded_file):
     return df, meta
     
 def variable_view(df, meta):
-    cols = []
+    """
+    Ritorna un DataFrame con var‑name, label, tipo e % missing.
+    Funziona anche se meta.column_labels è una lista.
+    """
+    # Dizionari helper
+    labels_map  = dict(zip(meta.column_names, meta.column_labels))
+    types_map   = getattr(meta, "variable_types", {})
+    value_fmt   = getattr(meta, "variable_value_formats", {})
+
+    rows = []
     for col in df.columns:
-        cols.append({
-            "var_name": col,
-            "label": meta.column_labels.get(col, ""),
-            "type": meta.variable_value_formats.get(col, ""),
-            "%missing": df[col].isna().mean().round(3),
-            "min": df[col].min(skipna=True),
-            "max": df[col].max(skipna=True)
+        rows.append({
+            "var_name":  col,
+            "label":     labels_map.get(col, ""),
+            "type":      types_map.get(col, ""),
+            "%missing":  df[col].isna().mean().round(3),
+            "min":       df[col].min(skipna=True),
+            "max":       df[col].max(skipna=True),
+            "value_fmt": value_fmt.get(col, "")
         })
-    return pd.DataFrame(cols)
+    return pd.DataFrame(rows)
+
 
 def gemini_embed(texts, model):
     rate_limiter.wait()
