@@ -82,42 +82,46 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 def load_sav(path_or_file) -> Tuple[pd.DataFrame, Dict]:
-    """Read a **SPSS .sav** file from *disk path*, *bytes*, *BytesIO* **or** a
-    *Streamlit* ``UploadedFile``.
+    """Robust reader for SPSS **.sav** files.
 
-    Parameters
-    ----------
-    path_or_file : str | os.PathLike | bytes | BytesIO | UploadedFile
-        Anything returned by `st.file_uploader` or a file‑system path.
+    Accepts:
+    * filesystem paths
+    * bytes/bytearray
+    * any file‑like object (e.g. Streamlit `UploadedFile`)
 
-    Returns
-    -------
-    df  : pandas.DataFrame
-        Raw data in tabular form (value formats *not* applied).
-    meta : dict
-        Simplified metadata: variable labels, value labels, types, missing ranges.
+    Strategy
+    --------
+    1. If we already have a *path on disk*, hand it straight to `pyreadstat.read_sav`.
+    2. If we have *bytes* or *file‑like*, **write them to a temporary file** and
+       pass that path to `pyreadstat` – this avoids the sometimes fragile
+       `io_bytes=True` pathway and works with older `pyreadstat` versions.
     """
-    import pyreadstat  # lazy import
+    import pyreadstat, tempfile, uuid
 
-    # Case 1 – Streamlit UploadedFile or any file‑like with .read()
-    if hasattr(path_or_file, "read") and not isinstance(path_or_file, (str, bytes, os.PathLike)):
-        try:
-            raw_bytes: bytes = path_or_file.getvalue()  # Streamlit UploadedFile
-        except AttributeError:
-            raw_bytes = path_or_file.read()  # generic file‑like
-        df, meta = pyreadstat.read_sav(raw_bytes, apply_value_formats=False, io_bytes=True)
-        sav_name = getattr(path_or_file, "name", "uploaded_file.sav")
-    # Case 2 – bytes already
-    elif isinstance(path_or_file, (bytes, bytearray)):
-        df, meta = pyreadstat.read_sav(path_or_file, apply_value_formats=False, io_bytes=True)
-        sav_name = "bytes_input.sav"
-    # Case 3 – normal path on disk
+    # Helper: obtain raw bytes from various input types
+    if isinstance(path_or_file, (str, os.PathLike)):
+        sav_path = os.fspath(path_or_file)
+        df, meta = pyreadstat.read_sav(sav_path, apply_value_formats=False)
     else:
-        df, meta = pyreadstat.read_sav(path_or_file, apply_value_formats=False)
-        sav_name = os.fspath(path_or_file)
+        # Get bytes from UploadedFile / file‑like / bytes
+        if isinstance(path_or_file, (bytes, bytearray)):
+            raw_bytes: bytes = bytes(path_or_file)
+            tmp_name = f"tmp_{uuid.uuid4().hex}.sav"
+        elif hasattr(path_or_file, "read"):
+            raw_bytes = path_or_file.read() if not hasattr(path_or_file, "getvalue") else path_or_file.getvalue()
+            tmp_name = getattr(path_or_file, "name", f"tmp_{uuid.uuid4().hex}.sav")
+        else:
+            raise TypeError("Unsupported input type for load_sav")
+
+        # Write to a temporary file to ensure full compatibility
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".sav") as tmp:
+            tmp.write(raw_bytes)
+            temp_path = tmp.name
+        df, meta = pyreadstat.read_sav(temp_path, apply_value_formats=False)
+        sav_path = tmp_name  # original name or generated one
 
     meta_dict = {
-        "sav_name": sav_name,
+        "sav_name": sav_path,
         "var_labels": meta.column_labels,
         "value_labels": meta.variable_value_labels,
         "var_types": meta.original_variable_types,
