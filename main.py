@@ -49,10 +49,12 @@ rate_limiter = GeminiRateLimiter()
 #  2. Utility functions
 # ───────────────────────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
-def read_sav(bytes_io):
-    df, meta = pyreadstat.read_sav(bytes_io, apply_value_formats=False)
+def read_sav(uploaded_file):
+    """uploaded_file è lo Streamlit UploadedFile; converti in bytes."""
+    raw = uploaded_file.getvalue()          # oppure uploaded_file.read()
+    df, meta = pyreadstat.read_sav(raw, apply_value_formats=False)
     return df, meta
-
+    
 def variable_view(df, meta):
     cols = []
     for col in df.columns:
