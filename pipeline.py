@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-"""Core pipeline utilities for the Survey‑to‑R Agent.
+"""Core pipeline utilities for the Survey‑to‑R Agent – **rev 2** (2025‑07‑14)
 
-This module implements the *minimum‑viable* versions of every function
-specified in the architecture outline. They are deliberately lightweight and
-kept dependency‑free except for **pandas** and **pyreadstat**.
-
-Key change (2025‑07‑14)
-----------------------
-The `load_sav` function now gracefully handles *Streamlit* `UploadedFile`
-objects (or any file‑like with a `.read()` method) by reading their binary
-content and passing it to **pyreadstat** with `io_bytes=True`. This resolves
-``TypeError: expected str, bytes or os.PathLike object, not UploadedFile``.
+Fixes
+-----
+* `load_sav` now stores **`var_labels` as a *dict*** (`name → label`) using
+  ``meta.column_names_to_labels`` (instead of the previous list), plus a new
+  key `var_names` for column order.  
+  → This resolves ``AttributeError: 'list' object has no attribute 'items'`` in
+  `summarize_variables`.
+* `summarize_variables` still accepts fallback formats (list) but expects a
+  dict in normal flow.
 """
 
 from dataclasses import dataclass, asdict
@@ -21,7 +20,8 @@ from typing import Dict, List, Literal, Tuple
 import json
 import os
 import pathlib
-import logging
+import tempfile
+import uuid
 
 import pandas as pd
 
@@ -82,47 +82,34 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 def load_sav(path_or_file) -> Tuple[pd.DataFrame, Dict]:
-    """Robust reader for SPSS **.sav** files.
+    """Read an SPSS **.sav** file from path, bytes or file‑like (Streamlit `UploadedFile`)."""
+    import pyreadstat
 
-    Accepts:
-    * filesystem paths
-    * bytes/bytearray
-    * any file‑like object (e.g. Streamlit `UploadedFile`)
-
-    Strategy
-    --------
-    1. If we already have a *path on disk*, hand it straight to `pyreadstat.read_sav`.
-    2. If we have *bytes* or *file‑like*, **write them to a temporary file** and
-       pass that path to `pyreadstat` – this avoids the sometimes fragile
-       `io_bytes=True` pathway and works with older `pyreadstat` versions.
-    """
-    import pyreadstat, tempfile, uuid
-
-    # Helper: obtain raw bytes from various input types
+    # Determine type and get bytes or path
     if isinstance(path_or_file, (str, os.PathLike)):
         sav_path = os.fspath(path_or_file)
         df, meta = pyreadstat.read_sav(sav_path, apply_value_formats=False)
     else:
-        # Get bytes from UploadedFile / file‑like / bytes
+        # Bytes or file‑like → write to temp file
         if isinstance(path_or_file, (bytes, bytearray)):
             raw_bytes: bytes = bytes(path_or_file)
-            tmp_name = f"tmp_{uuid.uuid4().hex}.sav"
+            orig_name = "bytes_input.sav"
         elif hasattr(path_or_file, "read"):
-            raw_bytes = path_or_file.read() if not hasattr(path_or_file, "getvalue") else path_or_file.getvalue()
-            tmp_name = getattr(path_or_file, "name", f"tmp_{uuid.uuid4().hex}.sav")
+            raw_bytes = path_or_file.getvalue() if hasattr(path_or_file, "getvalue") else path_or_file.read()
+            orig_name = getattr(path_or_file, "name", "uploaded_file.sav")
         else:
             raise TypeError("Unsupported input type for load_sav")
 
-        # Write to a temporary file to ensure full compatibility
         with tempfile.NamedTemporaryFile(delete=False, suffix=".sav") as tmp:
             tmp.write(raw_bytes)
             temp_path = tmp.name
         df, meta = pyreadstat.read_sav(temp_path, apply_value_formats=False)
-        sav_path = tmp_name  # original name or generated one
+        sav_path = orig_name
 
     meta_dict = {
         "sav_name": sav_path,
-        "var_labels": meta.column_labels,
+        "var_labels": meta.column_names_to_labels,  # dict name → label
+        "var_names": meta.column_names,             # ordered names list
         "value_labels": meta.variable_value_labels,
         "var_types": meta.original_variable_types,
         "missing_ranges": meta.missing_ranges,
@@ -131,11 +118,11 @@ def load_sav(path_or_file) -> Tuple[pd.DataFrame, Dict]:
 
 
 # ---------------------------------------------------------------------------
-# 2. Sanitize metadata (simple placeholder)
+# 2. Sanitize metadata (placeholder)
 # ---------------------------------------------------------------------------
 
 def sanitize_metadata(df: pd.DataFrame, meta: Dict) -> Tuple[pd.DataFrame, Dict]:
-    """Drop obvious non‑numeric/non‑ordinal columns and normalise missing codes."""
+    """Basic cleaning: drop obvious non‑scale columns and normalise missings."""
     drop_cols: List[str] = []
     for col in df.columns:
         if df[col].dtype == "object" and df[col].nunique() > 50:
@@ -145,7 +132,6 @@ def sanitize_metadata(df: pd.DataFrame, meta: Dict) -> Tuple[pd.DataFrame, Dict]
 
     clean_df = df.drop(columns=drop_cols)
 
-    # Replace user‑defined missings with NaN
     for col, ranges in meta.get("missing_ranges", {}).items():
         if col not in clean_df.columns:
             continue
@@ -158,11 +144,18 @@ def sanitize_metadata(df: pd.DataFrame, meta: Dict) -> Tuple[pd.DataFrame, Dict]
 
 
 # ---------------------------------------------------------------------------
-# 3. Summarize variables (placeholder: missing_pct always 0.0)
+# 3. Summarize variables
 # ---------------------------------------------------------------------------
 
 def summarize_variables(clean_meta: Dict) -> List[VariableInfo]:
+    """Return a list of `VariableInfo` objects for the *variable view* table."""
     var_labels = clean_meta.get("var_labels", {})
+
+    # Ensure dict mapping; fallback if list supplied
+    if isinstance(var_labels, list):
+        names = clean_meta.get("var_names", list(range(len(var_labels))))
+        var_labels = {n: l for n, l in zip(names, var_labels)}
+
     view: List[VariableInfo] = []
     for name, label in var_labels.items():
         view.append(
@@ -178,19 +171,19 @@ def summarize_variables(clean_meta: Dict) -> List[VariableInfo]:
 
 
 # ---------------------------------------------------------------------------
-# 4. Gemini detect scales (dummy clustering by prefix)
+# 4. Gemini detect scales (dummy implementation)
 # ---------------------------------------------------------------------------
 
 def gemini_detect_scales(var_view: List[VariableInfo], prompt_cfg: PromptConfig) -> List[Scale]:
     clusters: Dict[str, List[str]] = {}
     for v in var_view:
-        key = v.name.split("_")[0] if "_" in v.name else "misc"
-        clusters.setdefault(key, []).append(v.name)
+        pref = v.name.split("_")[0] if "_" in v.name else "misc"
+        clusters.setdefault(pref, []).append(v.name)
     return [Scale(name=k.title(), items=items, confidence=0.3) for k, items in clusters.items()]
 
 
 # ---------------------------------------------------------------------------
-# 6. Detect reverse items (simple correlation sign test)
+# 6. Detect reverse items (simple corr sign)
 # ---------------------------------------------------------------------------
 
 def detect_reverse_items(scales_confirmed: List[Scale], df: pd.DataFrame) -> Dict[str, bool]:
@@ -209,7 +202,7 @@ def detect_reverse_items(scales_confirmed: List[Scale], df: pd.DataFrame) -> Dic
 
 
 # ---------------------------------------------------------------------------
-# 7. Build R syntax (core exporter)
+# 7. Build R syntax (unchanged)
 # ---------------------------------------------------------------------------
 
 def build_r_syntax(sav_path: str, scales: List[Scale], rev_map: Dict[str, bool], opts: Options) -> str:
@@ -221,14 +214,11 @@ def build_r_syntax(sav_path: str, scales: List[Scale], rev_map: Dict[str, bool],
     L(f"# Generated: {datetime.now().isoformat()}")
     L("# -------------------------------------------------------------\n")
 
-    # 1. Packages
     L("if (!require('pacman')) install.packages('pacman')")
     L("pacman::p_load(haven, tidyverse, psych, MBESS, GPArotation, lavaan)")
 
-    # 2. Import
     L(f"data <- haven::read_sav('{sav_path}')\n")
 
-    # 3. Reverse scoring
     if any(rev_map.values()):
         L("# Reverse‑score flagged items")
         for item, flag in rev_map.items():
@@ -237,27 +227,22 @@ def build_r_syntax(sav_path: str, scales: List[Scale], rev_map: Dict[str, bool],
                 L(f"minv <- min(data${item}, na.rm = TRUE)")
                 L(f"data${item} <- maxv + minv - data${item}\n")
 
-    # 4. Reliability per scale
     L("# Reliability analysis (Cronbach α / McDonald Ω)")
     for sc in scales:
-        item_vec_name = f"items_{sc.name.lower()}"
-        items_csv = ", ".join(f"'{it}'" for it in sc.items)
-        L(f"{item_vec_name} <- c({items_csv})")
-        L(f"alpha_{sc.name.lower()} <- psych::alpha(data[{item_vec_name}], check.keys = TRUE)")
-        L(f"print(alpha_{sc.name.lower()}$total)  # Cronbach α total")
-        L(f"omega_{sc.name.lower()} <- MBESS::ci.reliability(data[{item_vec_name}], type = 'omega')\n")
+        vname = f"items_{sc.name.lower()}"
+        items_csv = ", ".join(f"'{i}'" for i in sc.items)
+        L(f"{vname} <- c({items_csv})")
+        L(f"alpha_{sc.name.lower()} <- psych::alpha(data[{vname}], check.keys = TRUE)")
+        L(f"omega_{sc.name.lower()} <- MBESS::ci.reliability(data[{vname}], type = 'omega')\n")
 
-    # 5. Optional EFA
     if opts.include_efa:
-        L("# Exploratory Factor Analysis (parallel analysis)")
+        L("# Exploratory Factor Analysis (parallel)")
         all_items = [i for s in scales for i in s.items]
         all_items_vec = ", ".join(f"'{i}'" for i in all_items)
         L(f"efa_items <- na.omit(data[, c({all_items_vec})])")
         L("psych::fa.parallel(efa_items, fa = 'fa')")
-        L("# Set nfactors manually based on the scree / parallel output")
         L("fa_res <- psych::fa(efa_items, nfactors =   , rotate = 'promax')\n")
 
-    # 6. Descriptives & correlations
     L("# Descriptive statistics and correlations")
     L("desclist <- purrr::map_df(names(data), ~psych::describe(data[[.x]]), .id = 'variable')")
     cor_expr = {
@@ -267,7 +252,6 @@ def build_r_syntax(sav_path: str, scales: List[Scale], rev_map: Dict[str, bool],
     }[opts.correlation_type]
     L(f"cors <- {cor_expr}\n")
 
-    # 7. Save artefacts
     L("haven::write_sav(data, 'enhanced_dataset.sav')")
     L("save(desclist, cors, file = 'analysis_objects.RData')\n")
 
@@ -275,7 +259,7 @@ def build_r_syntax(sav_path: str, scales: List[Scale], rev_map: Dict[str, bool],
 
 
 # ---------------------------------------------------------------------------
-# 8. Write R file to disk
+# 8. Write R file
 # ---------------------------------------------------------------------------
 
 def write_r_file(r_script: str, out_dir: str | os.PathLike = "outputs") -> str:
@@ -286,11 +270,10 @@ def write_r_file(r_script: str, out_dir: str | os.PathLike = "outputs") -> str:
 
 
 # ---------------------------------------------------------------------------
-# 9. Session logging to JSON Lines
+# 9. Log session
 # ---------------------------------------------------------------------------
 
 LOG_FILE = pathlib.Path("session_log.jsonl")
-
 
 def log_session(event: Dict) -> None:
     with LOG_FILE.open("a", encoding="utf-8") as fp:
@@ -299,25 +282,17 @@ def log_session(event: Dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 10. Orchestrator (batch)
+# 10. Orchestrator
 # ---------------------------------------------------------------------------
 
 def orchestrate_pipeline(path: str | bytes | BytesIO, opts: Options) -> str:
     df, meta = load_sav(path)
     clean_df, clean_meta = sanitize_metadata(df, meta)
     var_view = summarize_variables(clean_meta)
-    scales_prop = gemini_detect_scales(var_view, PromptConfig(system_prompt="", temperature=0.2, top_p=0.9))
-    rev_map = detect_reverse_items(scales_prop, clean_df)
+    scales = gemini_detect_scales(var_view, PromptConfig(system_prompt="", temperature=0.2, top_p=0.9))
+    rev_map = detect_reverse_items(scales, clean_df)
 
-    sav_name_for_r = meta.get("sav_name", "data.sav")
-    r_script = build_r_syntax(sav_path=sav_name_for_r, scales=scales_prop, rev_map=rev_map, opts=opts)
+    r_script = build_r_syntax(meta["sav_name"], scales, rev_map, opts)
     out_path = write_r_file(r_script)
 
-    log_session({
-        "timestamp": datetime.now().isoformat(),
-        "file": sav_name_for_r,
-        "n_scales": len(scales_prop),
-        "opts": asdict(opts),
-    })
-
-    return out_path
+    log
