@@ -49,6 +49,9 @@ rate_limiter = GeminiRateLimiter()
 #  2. Utility functions
 # ───────────────────────────────────────────────────────────────
 @st.cache_data(show_spinner=False)
+# ID del modello di embedding; usa quello disponibile nel tuo account
+EMBED_MODEL_ID = "models/embedding-001"    # oppure "models/text-embedding-004"
+
 def read_sav(uploaded_file):
     """
     Salva l’UploadedFile Streamlit in un file temporaneo
@@ -105,23 +108,46 @@ def gemini_group_items(texts, model):
     except Exception:
         return {}
 
-def detect_constructs(labels, model):
-    # Embedding clustering
-    emb = np.vstack(gemini_embed(labels, model))
+def gemini_embed(texts):
+    """
+    Restituisce una lista di vettori embedding (una chiamata API per ogni testo)
+    usando google.generativeai.embed_content().
+    """
+    vectors = []
+    for txt in texts:
+        rate_limiter.wait()
+        resp = genai.embed_content(model=EMBED_MODEL_ID,
+                                   content=txt,
+                                   task_type="retrieval_document")
+        vectors.append(resp["embedding"])
+    return vectors
+
+def detect_constructs(labels, gpt_model):
+    """
+    1) Embedding + clustering
+    2) Prompt LLM per raggruppare e nominare costrutti
+    """
+    emb = np.vstack(gemini_embed(labels))          # <- ora NON passa più il modello
     if len(labels) > 1:
         clusters = AgglomerativeClustering(
-            n_clusters=None, metric="cosine", linkage="average", distance_threshold=0.3
+            n_clusters=None,
+            metric="cosine",
+            linkage="average",
+            distance_threshold=0.30,
         ).fit_predict(emb)
     else:
         clusters = np.zeros(1, dtype=int)
+
     draft = {}
     for idx, lab in enumerate(labels):
         draft.setdefault(f"Cluster{clusters[idx]+1}", []).append(lab)
-    # Gemini refinement
-    llm_map = gemini_group_items(labels, model)
+
+    # Refinement via LLM (usa il modello generativo già configurato)
+    llm_map = gemini_group_items(labels, gpt_model)
     if llm_map:
         draft.update(llm_map)
     return draft
+
 
 def cronbach_alpha(df):
     return pg.cronbach_alpha(data=df)[0]
