@@ -295,6 +295,8 @@ LOG_FILE = pathlib.Path("session_log.jsonl")
 
 
 def log_session(event: Dict) -> None:
-    """Append a JSON‑recorded event to the persistent log file."""
-    with LOG
+    """Append a single JSON event (one‑line) to persistent log."""
+    event.setdefault("timestamp", datetime.now().isoformat())
+    with LOG_FILE.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(event, ensure_ascii=False) + "\n")
 
