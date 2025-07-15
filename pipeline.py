@@ -288,7 +288,13 @@ def write_r_file(r_script: str, out_dir: str | os.PathLike = "outputs") -> str:
     return str(r_path)
 
 # ---------------------------------------------------------------------------
-# 8. Logging
+# 8. Logging utilities
 # ---------------------------------------------------------------------------
 
-LOG_FILE = pathlib.Path("session_log.json
+LOG_FILE = pathlib.Path("session_log.jsonl")
+
+
+def log_session(event: Dict) -> None:
+    """Append a JSON‑recorded event to the persistent log file."""
+    with LOG
+
