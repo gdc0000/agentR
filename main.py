@@ -3,7 +3,7 @@ import pandas as pd
 from datetime import datetime
 from typing import List
 
-from pipeline import (
+from survey_to_r import (
     load_sav,
     sanitize_metadata,
     summarize_variables,

@@ -7,3 +7,4 @@ scikit-learn
 pingouin
 factor_analyzer
 google-generativeai
+pytest
