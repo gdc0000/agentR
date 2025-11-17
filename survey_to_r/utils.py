@@ -12,7 +12,7 @@ from typing import Dict, List, Optional
 from .models import VariableInfo, Scale, Options, PromptConfig
 from .io import load_sav, sanitize_metadata, write_r_file
 from .analysis import summarize_variables, detect_reverse_items
-from .gemini import gemini_detect_scales
+from .llm import gemini_detect_scales
 from .r_syntax import build_r_syntax
 from .config import config
 import hashlib
@@ -81,7 +81,7 @@ def orchestrate_pipeline(
     """
     from .io import load_sav, sanitize_metadata, write_r_file
     from .analysis import summarize_variables, detect_reverse_items
-    from .gemini import gemini_detect_scales
+    from .llm import gemini_detect_scales
     from .r_syntax import build_r_syntax
     
     # Set default configurations if not provided

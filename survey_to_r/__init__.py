@@ -23,7 +23,7 @@ from .analysis import (
     detect_reverse_items
 )
 
-from .gemini import (
+from .llm import (
     gemini_detect_scales
 )
 
