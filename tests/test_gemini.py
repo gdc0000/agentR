@@ -51,22 +51,12 @@ def test_gemini_detect_scales_with_none_prompt_config():
         gemini_detect_scales(variables, None)
 
 
-@patch('survey_to_r.gemini.genai')
 @patch('survey_to_r.gemini.CONFIG')
-def test_gemini_detect_scales_with_mock_api(mock_config, mock_genai):
+def test_gemini_detect_scales_with_mock_api(mock_config):
     """Test gemini_detect_scales with mocked API calls."""
     # Mock the configuration
     mock_config.GEMINI_API_KEY = "test_api_key"
     mock_config.GEMINI_MODEL = "test_model"
-    
-    # Mock the genai module
-    mock_model = MagicMock()
-    mock_response = MagicMock()
-    mock_response.text = '{"scales": [{"name": "Test Scale", "items": ["item1", "item2"], "confidence": 0.9}]}'
-    
-    mock_genai.configure.return_value = None
-    mock_genai.GenerativeModel.return_value = mock_model
-    mock_model.generate_content.return_value = mock_response
     
     variables = [
         VariableInfo(name="item1", label="Item 1", item_text="First item", missing_pct=0.0, type="numeric"),

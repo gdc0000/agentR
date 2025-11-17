@@ -31,7 +31,7 @@ class Scale:
 @dataclass
 class PromptConfig:
     """Configuration for AI prompt generation."""
-    system_prompt: str
+    system_prompt: str = "Group survey items into psychological constructs."
     temperature: float = 0.2
     top_p: float = 0.9
 

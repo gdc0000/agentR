@@ -10,6 +10,12 @@ from datetime import datetime
 from typing import Dict, List, Optional
 
 from .models import VariableInfo, Scale, Options, PromptConfig
+from .io import load_sav, sanitize_metadata, write_r_file
+from .analysis import summarize_variables, detect_reverse_items
+from .gemini import gemini_detect_scales
+from .r_syntax import build_r_syntax
+from .config import config
+import hashlib
 
 
 def setup_logging(log_file_path: str) -> None:
@@ -21,6 +27,8 @@ def setup_logging(log_file_path: str) -> None:
     """
     log_path = pathlib.Path(log_file_path)
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    # Ensure log file exists
+    log_path.touch(exist_ok=True)
 
 
 def log_session(event: Dict) -> None:
@@ -39,6 +47,15 @@ def log_session(event: Dict) -> None:
     event.setdefault("timestamp", datetime.now().isoformat())
     event.setdefault("level", "info")
     
+    # Optionally mask file paths to prevent PII leakage
+    if config.get("mask_file_names", True) and "file_path" in event:
+        try:
+            digest = hashlib.sha256(event["file_path"].encode("utf-8")).hexdigest()
+            event["file_path_sha256"] = digest
+        except Exception:
+            event["file_path_sha256"] = "<redacted>"
+        del event["file_path"]
+
     with log_path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(event, ensure_ascii=False) + "\n")
 
