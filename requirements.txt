@@ -8,4 +8,4 @@ pingouin
 factor_analyzer
 openai
 pytest
-openai
+google-generativeai
