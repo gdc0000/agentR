@@ -6,6 +6,6 @@ scipy
 scikit-learn
 pingouin
 factor_analyzer
-google-generativeai
+openai
 pytest
 openai

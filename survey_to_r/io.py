@@ -8,6 +8,11 @@ and writing R script files.
 import os
 import tempfile
 from typing import Any, Dict, Tuple, Union, BinaryIO
+from .config import config
+try:
+    import pyreadstat
+except Exception:
+    pyreadstat = None
 
 from .models import VariableInfo
 
@@ -43,29 +48,51 @@ def load_sav(path_or_file: Union[str, os.PathLike, bytes, bytearray, BinaryIO]) 
     """
     pd = _ensure_pandas()
     
-    try:
-        import pyreadstat  # heavy; local import
-    except ModuleNotFoundError:
+    if pyreadstat is None:
         raise RuntimeError("pyreadstat is required to read .sav files but is not installed.")
 
     if isinstance(path_or_file, (str, os.PathLike)):
         sav_path = os.fspath(path_or_file)
-        df, meta = pyreadstat.read_sav(sav_path, apply_value_formats=False)
+        # Check for existence and handle read errors explicitly
+        if not os.path.exists(sav_path):
+            raise FileNotFoundError(sav_path)
+        try:
+            df, meta = pyreadstat.read_sav(sav_path, apply_value_formats=False)
+        except Exception as e:
+            # Re-raise as ValueError to the caller for invalid files
+            raise ValueError(str(e)) from e
     else:
         # Bytes or file-like → temp file
         if isinstance(path_or_file, (bytes, bytearray)):
             raw_bytes = bytes(path_or_file)
             orig_name = "bytes_input.sav"
+            # Enforce max file size
+            max_mb = int(config.get("max_file_size_mb", 50))
+            if len(raw_bytes) > max_mb * 1024 * 1024:
+                raise ValueError("Uploaded file exceeds maximum allowed size")
         elif hasattr(path_or_file, "read"):
             raw_bytes = path_or_file.getvalue() if hasattr(path_or_file, "getvalue") else path_or_file.read()
             orig_name = getattr(path_or_file, "name", "uploaded_file.sav")
         else:
             raise TypeError("Unsupported input type for load_sav")
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".sav") as tmp:
-            tmp.write(raw_bytes)
-            temp_path = tmp.name
-        df, meta = pyreadstat.read_sav(temp_path, apply_value_formats=False)
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".sav") as tmp:
+                tmp.write(raw_bytes)
+                temp_path = tmp.name
+            df, meta = pyreadstat.read_sav(temp_path, apply_value_formats=False)
+        except Exception as e:
+            # bubble up as ValueError for invalid content
+            raise ValueError(str(e)) from e
+        finally:
+            # Remove temporary file to avoid leaking sensitive data
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except OSError:
+                    pass
+        sav_path = orig_name
         sav_path = orig_name
 
     if not isinstance(df, pd.DataFrame):
@@ -82,7 +109,7 @@ def load_sav(path_or_file: Union[str, os.PathLike, bytes, bytearray, BinaryIO]) 
     return df, meta_dict
 
 
-def sanitize_metadata(df: Any, meta: Dict) -> Tuple[Any, Dict]:
+def sanitize_metadata(df: Any, meta: Dict = None) -> Tuple[Any, Dict]:
     """
     Clean and sanitize metadata by removing problematic columns.
     
@@ -93,6 +120,15 @@ def sanitize_metadata(df: Any, meta: Dict) -> Tuple[Any, Dict]:
     Returns:
         Tuple of (cleaned DataFrame, cleaned metadata)
     """
+    # Backwards-compatibility: if user passed only metadata dict, return cleaned metadata
+    if meta is None and isinstance(df, dict):
+        meta = df
+        # Make an empty DataFrame for processing
+        import pandas as pd
+        empty_df = pd.DataFrame()
+        # Return only the cleaned metadata for legacy single-argument calls
+        return sanitize_metadata(empty_df, meta)[1]
+
     pd = _ensure_pandas()
 
     drop_cols: list[str] = []
@@ -132,7 +168,15 @@ def write_r_file(r_script: str, out_dir: str = "outputs") -> str:
     """
     import pathlib
     
-    pathlib.Path(out_dir).mkdir(parents=True, exist_ok=True)
-    r_path = pathlib.Path(out_dir) / "analysis.R"
+    # Prevent path traversal by ensuring out_dir is within configured root
+    root = pathlib.Path(config.get("root_output_dir", "outputs")).resolve()
+    target = pathlib.Path(out_dir).resolve()
+    # If out_dir is not a subdirectory of root, raise an error
+    if not str(target).startswith(str(root)):
+        raise ValueError("output directory must be within configured root_output_dir")
+
+    # Ensure the actual output folder exists
+    target.mkdir(parents=True, exist_ok=True)
+    r_path = target / "analysis.R"
     r_path.write_text(r_script, encoding="utf-8")
     return str(r_path)

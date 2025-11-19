@@ -11,16 +11,32 @@ from typing import Dict, List
 from .models import Scale, Options
 
 
+def escape_r_string(val: str) -> str:
+    """
+    Produce a safe R string literal by escaping backslashes and double quotes and
+    wrapping in double-quotes for safe insertion into generated R code.
+
+    Example: input O"Brien -> "O\"Brien"
+    """
+    if val is None:
+        return '""'
+    # Escape backslashes first
+    raw = str(val).replace('\\', '\\\\')
+    raw = raw.replace('"', '\\"')
+    raw = raw.replace('\n', '\\n')
+    return f'"{raw}"'
+
+
 def build_r_syntax(sav_path: str, scales: List[Scale], rev_map: Dict[str, bool], opts: Options) -> str:
     """
     Build R syntax for statistical analysis.
-    
+
     Args:
         sav_path: Path to the SPSS file
         scales: List of confirmed scales
         rev_map: Dictionary mapping items to reverse-scoring flags
         opts: Analysis options
-        
+
     Returns:
         Complete R script as a string
     """
@@ -33,20 +49,25 @@ def build_r_syntax(sav_path: str, scales: List[Scale], rev_map: Dict[str, bool],
     a("# -------------------------------------------------------------\n")
     a("if (!require('pacman')) install.packages('pacman')")
     a("pacman::p_load(haven, tidyverse, psych, MBESS, GPArotation, lavaan)")
-    a(f"data <- haven::read_sav('{sav_path}')\n")
+    a(f"data <- haven::read_sav({escape_r_string(sav_path)})\n")
 
     if any(rev_map.values()):
         a("# Reverse‑score flagged items")
         for item, flag in rev_map.items():
             if flag:
-                a(f"maxv <- max(data${item}, na.rm = TRUE)")
-                a(f"minv <- min(data${item}, na.rm = TRUE)")
-                a(f"data${item} <- maxv + minv - data${item}\n")
+                # Use data[[<quoted>]] to safely reference a column by name
+                qitem = escape_r_string(item)
+                a(f"maxv <- max(data[[{qitem}]], na.rm = TRUE)")
+                a(f"minv <- min(data[[{qitem}]], na.rm = TRUE)")
+                a(f"data[[{qitem}]] <- maxv + minv - data[[{qitem}]]\n")
 
     a("# Reliability analysis (Cronbach α / McDonald Ω)")
     for sc in scales:
         vname = f"items_{sc.name.lower()}"
-        items_csv = ", ".join(f"'{i}'" for i in sc.items)
+        if sc.note:
+            a(f"# {sc.name}: {sc.note}")
+        # Build items list using escaped R string literals
+        items_csv = ", ".join(escape_r_string(i) for i in sc.items)
         a(f"{vname} <- c({items_csv})")
         a(f"alpha_{sc.name.lower()} <- psych::alpha(data[{vname}], check.keys = TRUE)")
         a(f"omega_{sc.name.lower()} <- MBESS::ci.reliability(data[{vname}], type = 'omega')\n")
@@ -54,7 +75,7 @@ def build_r_syntax(sav_path: str, scales: List[Scale], rev_map: Dict[str, bool],
     if opts.include_efa:
         a("# Exploratory Factor Analysis (parallel)")
         all_items = [i for s in scales for i in s.items]
-        items_vec = ", ".join(f"'{i}'" for i in all_items)
+        items_vec = ", ".join(escape_r_string(i) for i in all_items)
         a(f"efa_items <- na.omit(data[, c({items_vec})])")
         a("psych::fa.parallel(efa_items, fa = 'fa')")
         a("fa_res <- psych::fa(efa_items, nfactors =   , rotate = 'promax')\n")

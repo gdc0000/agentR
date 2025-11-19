@@ -41,14 +41,20 @@ def test_setup_logging_existing_dir():
         assert os.path.exists(log_file)
 
 
-@patch('survey_to_r.utils.config')
-def test_log_session(mock_config):
+@patch('survey_to_r.config.config.get')
+def test_log_session(mock_get):
     """Test log_session function writes JSONL events correctly."""
-    mock_config.get.return_value = "test_log.jsonl"
     
     with tempfile.TemporaryDirectory() as tmp_dir:
         test_log = os.path.join(tmp_dir, "test_log.jsonl")
-        mock_config.get.return_value = test_log
+        def config_get(key, default=None):
+            if key == "log_file":
+                return test_log
+            if key == "mask_file_names":
+                return True
+            return default
+
+        mock_get.side_effect = config_get
         
         # Test logging an event
         test_event = {"event": "test", "message": "test message"}
@@ -66,16 +72,24 @@ def test_log_session(mock_config):
             assert logged_event["message"] == "test message"
             assert "timestamp" in logged_event
             assert logged_event["level"] == "info"
+            # since mask is enabled, file_path isn't present
+            assert "file_path" not in logged_event
 
 
-@patch('survey_to_r.utils.config')
-def test_log_session_with_existing_fields(mock_config):
+@patch('survey_to_r.config.config.get')
+def test_log_session_with_existing_fields(mock_get):
     """Test log_session preserves existing timestamp and level fields."""
-    mock_config.get.return_value = "test_log.jsonl"
     
     with tempfile.TemporaryDirectory() as tmp_dir:
         test_log = os.path.join(tmp_dir, "test_log.jsonl")
-        mock_config.get.return_value = test_log
+        def config_get(key, default=None):
+            if key == "log_file":
+                return test_log
+            if key == "mask_file_names":
+                return True
+            return default
+
+        mock_get.side_effect = config_get
         
         # Test logging an event with existing timestamp and level
         test_event = {
@@ -95,26 +109,52 @@ def test_log_session_with_existing_fields(mock_config):
             assert logged_event["level"] == "warning"
 
 
+@patch('survey_to_r.config.config.get')
+def test_log_session_masks_file_name(mock_get):
+    """Test log_session masks file names when mask_file_names is true."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        test_log_file = os.path.join(tmp_dir, "test_log.jsonl")
+
+        def config_get(key, default=None):
+            if key == "log_file":
+                return test_log_file
+            if key == "mask_file_names":
+                return True
+            return default
+
+        mock_get.side_effect = config_get
+
+        test_event = {"event": "upload", "file_path": "/tmp/mydata.sav"}
+        from survey_to_r.utils import log_session
+        log_session(test_event)
+
+        with open(test_log_file, 'r') as f:
+            lines = f.readlines()
+            logged_event = json.loads(lines[0])
+            assert "file_path" not in logged_event
+            assert "file_path_sha256" in logged_event
+
+
 def test_orchestrate_pipeline_invalid_file():
     """Test orchestrate_pipeline with invalid file path."""
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(RuntimeError, match="Pipeline orchestration failed: non_existent_file.sav"):
         orchestrate_pipeline("non_existent_file.sav", Options(), PromptConfig())
 
 
-@patch('survey_to_r.utils.load_sav')
-@patch('survey_to_r.utils.sanitize_metadata')
-@patch('survey_to_r.utils.summarize_variables')
-@patch('survey_to_r.utils.detect_reverse_items')
-@patch('survey_to_r.utils.gemini_detect_scales')
-@patch('survey_to_r.utils.build_r_syntax')
-@patch('survey_to_r.utils.write_r_file')
+@patch('survey_to_r.io.load_sav')
+@patch('survey_to_r.io.sanitize_metadata')
+@patch('survey_to_r.analysis.summarize_variables')
+@patch('survey_to_r.analysis.detect_reverse_items')
+@patch('survey_to_r.gemini.gemini_detect_scales')
+@patch('survey_to_r.r_syntax.build_r_syntax')
+@patch('survey_to_r.io.write_r_file')
 def test_orchestrate_pipeline_success(mock_write_r_file, mock_build_r_syntax, mock_gemini_detect_scales,
-                                     mock_detect_reverse_items, mock_summarize_variables,
-                                     mock_sanitize_metadata, mock_load_sav):
+                                      mock_detect_reverse_items, mock_summarize_variables,
+                                      mock_sanitize_metadata, mock_load_sav):
     """Test orchestrate_pipeline successful execution with mocked dependencies."""
     # Mock the dependencies
     mock_load_sav.return_value = (MagicMock(), {"variable_labels": {"var1": "Label"}})
-    mock_sanitize_metadata.return_value = {"variable_labels": {"var1": "Label"}}
+    mock_sanitize_metadata.return_value = (MagicMock(), {"variable_labels": {"var1": "Label"}})
     mock_summarize_variables.return_value = [
         VariableInfo(name="var1", label="Label", item_text="Item", missing_pct=0.0, type="numeric")
     ]
@@ -129,31 +169,31 @@ def test_orchestrate_pipeline_success(mock_write_r_file, mock_build_r_syntax, mo
     
     # Verify all mocks were called
     mock_load_sav.assert_called_once_with("test.sav")
-    mock_sanitize_metadata.assert_called_once()
-    mock_summarize_variables.assert_called_once()
-    mock_detect_reverse_items.assert_called_once()
-    mock_gemini_detect_scales.assert_called_once()
+    mock_sanitize_metadata.assert_called_once_with(MagicMock(), {"variable_labels": {"var1": "Label"}})
+    mock_summarize_variables.assert_called_once_with({"variable_labels": {"var1": "Label"}})
+    mock_detect_reverse_items.assert_called_once_with([Scale(name="Test Scale", items=["var1"], confidence=0.8)], MagicMock())
+    mock_gemini_detect_scales.assert_called_once_with([VariableInfo(name="var1", label="Label", item_text="Item", missing_pct=0.0, type="numeric")], ANY)
     mock_build_r_syntax.assert_called_once()
-    mock_write_r_file.assert_called_once()
+    mock_write_r_file.assert_called_once_with("# Test R code")
     
     # Verify result is the R syntax
     assert result == "# Test R code"
 
 
-@patch('survey_to_r.utils.load_sav')
-@patch('survey_to_r.utils.sanitize_metadata')
-@patch('survey_to_r.utils.summarize_variables')
-@patch('survey_to_r.utils.detect_reverse_items')
-@patch('survey_to_r.utils.gemini_detect_scales')
-@patch('survey_to_r.utils.build_r_syntax')
-@patch('survey_to_r.utils.write_r_file')
+@patch('survey_to_r.io.load_sav')
+@patch('survey_to_r.io.sanitize_metadata')
+@patch('survey_to_r.analysis.summarize_variables')
+@patch('survey_to_r.analysis.detect_reverse_items')
+@patch('survey_to_r.gemini.gemini_detect_scales')
+@patch('survey_to_r.r_syntax.build_r_syntax')
+@patch('survey_to_r.io.write_r_file')
 def test_orchestrate_pipeline_no_scales(mock_write_r_file, mock_build_r_syntax, mock_gemini_detect_scales,
-                                       mock_detect_reverse_items, mock_summarize_variables,
-                                       mock_sanitize_metadata, mock_load_sav):
+                                        mock_detect_reverse_items, mock_summarize_variables,
+                                        mock_sanitize_metadata, mock_load_sav):
     """Test orchestrate_pipeline when no scales are detected."""
     # Mock the dependencies
     mock_load_sav.return_value = (MagicMock(), {"variable_labels": {"var1": "Label"}})
-    mock_sanitize_metadata.return_value = {"variable_labels": {"var1": "Label"}}
+    mock_sanitize_metadata.return_value = (MagicMock(), {"variable_labels": {"var1": "Label"}})
     mock_summarize_variables.return_value = [
         VariableInfo(name="var1", label="Label", item_text="Item", missing_pct=0.0, type="numeric")
     ]
@@ -176,29 +216,29 @@ def test_orchestrate_pipeline_no_scales(mock_write_r_file, mock_build_r_syntax, 
     assert result == "# Basic R code"
 
 
-@patch('survey_to_r.utils.load_sav')
+@patch('survey_to_r.io.load_sav')
 def test_orchestrate_pipeline_load_sav_error(mock_load_sav):
     """Test orchestrate_pipeline handles load_sav error."""
     mock_load_sav.side_effect = ValueError("Invalid file format")
     
-    with pytest.raises(ValueError, match="Invalid file format"):
+    with pytest.raises(RuntimeError, match="Pipeline orchestration failed: Invalid file format"):
         orchestrate_pipeline("invalid.sav", Options(), PromptConfig())
 
 
-@patch('survey_to_r.utils.load_sav')
-@patch('survey_to_r.utils.sanitize_metadata')
-@patch('survey_to_r.utils.summarize_variables')
-@patch('survey_to_r.utils.detect_reverse_items')
-@patch('survey_to_r.utils.gemini_detect_scales')
-@patch('survey_to_r.utils.build_r_syntax')
-@patch('survey_to_r.utils.write_r_file')
+@patch('survey_to_r.io.load_sav')
+@patch('survey_to_r.io.sanitize_metadata')
+@patch('survey_to_r.analysis.summarize_variables')
+@patch('survey_to_r.analysis.detect_reverse_items')
+@patch('survey_to_r.gemini.gemini_detect_scales')
+@patch('survey_to_r.r_syntax.build_r_syntax')
+@patch('survey_to_r.io.write_r_file')
 def test_orchestrate_pipeline_write_error(mock_write_r_file, mock_build_r_syntax, mock_gemini_detect_scales,
-                                         mock_detect_reverse_items, mock_summarize_variables,
-                                         mock_sanitize_metadata, mock_load_sav):
+                                          mock_detect_reverse_items, mock_summarize_variables,
+                                          mock_sanitize_metadata, mock_load_sav):
     """Test orchestrate_pipeline handles write_r_file error."""
     # Mock the dependencies up to write_r_file
     mock_load_sav.return_value = (MagicMock(), {"variable_labels": {"var1": "Label"}})
-    mock_sanitize_metadata.return_value = {"variable_labels": {"var1": "Label"}}
+    mock_sanitize_metadata.return_value = (MagicMock(), {"variable_labels": {"var1": "Label"}})
     mock_summarize_variables.return_value = [
         VariableInfo(name="var1", label="Label", item_text="Item", missing_pct=0.0, type="numeric")
     ]

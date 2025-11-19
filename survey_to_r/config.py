@@ -16,12 +16,16 @@ class Config:
         self._config: Dict[str, Any] = {
             "log_file": os.getenv("SURVEY_TO_R_LOG_FILE", "session_log.jsonl"),
             "output_dir": os.getenv("SURVEY_TO_R_OUTPUT_DIR", "outputs"),
-            "default_prompt": os.getenv("SURVEY_TO_R_DEFAULT_PROMPT", 
+            "default_prompt": os.getenv("SURVEY_TO_R_DEFAULT_PROMPT",
                                        "Group survey items into psychological constructs."),
             "default_temperature": float(os.getenv("SURVEY_TO_R_TEMPERATURE", "0.2")),
             "default_top_p": float(os.getenv("SURVEY_TO_R_TOP_P", "0.9")),
             "max_file_size_mb": int(os.getenv("SURVEY_TO_R_MAX_FILE_SIZE", "50")),
+            "root_output_dir": os.getenv("SURVEY_TO_R_ROOT_OUTPUT_DIR", "outputs"),
+            "mask_file_names": os.getenv("SURVEY_TO_R_MASK_LOGS", "true").lower() == "true",
             "enable_logging": os.getenv("SURVEY_TO_R_ENABLE_LOGGING", "true").lower() == "true",
+            "openrouter_api_key": os.getenv("OPENROUTER_API_KEY"),
+            "openrouter_model": os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini"),
         }
     
     def get(self, key: str, default: Optional[Any] = None) -> Any:
@@ -39,6 +43,13 @@ class Config:
         if output_dir and not os.access(output_dir, os.W_OK):
             try:
                 os.makedirs(output_dir, exist_ok=True)
+            except OSError:
+                return False
+        # Check root output dir
+        root_out = self.get("root_output_dir")
+        if root_out:
+            try:
+                os.makedirs(root_out, exist_ok=True)
             except OSError:
                 return False
         

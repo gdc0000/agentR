@@ -1,0 +1,16 @@
+{"event": "test", "message": "test message", "timestamp": "2025-11-17T22:03:18.175391", "level": "info"}
+{"event": "test", "timestamp": "2023-01-01T00:00:00", "level": "warning"}
+{"event": "test", "message": "test message", "timestamp": "2025-11-17T22:04:35.875519", "level": "info"}
+{"event": "test", "timestamp": "2023-01-01T00:00:00", "level": "warning"}
+{"event": "test", "message": "test message", "timestamp": "2025-11-17T22:16:05.449226", "level": "info"}
+{"event": "test", "timestamp": "2023-01-01T00:00:00", "level": "warning"}
+{"event": "pipeline_error", "error": "non_existent_file.sav", "timestamp": "2025-11-17T22:16:05.460271", "level": "info", "file_path_sha256": "82875cf9caf903b6d3a37f3974be4947d879c8e1e148b5fbc9f52b21d4e657d7"}
+{"event": "pipeline_error", "error": "test.sav", "timestamp": "2025-11-17T22:16:05.471439", "level": "info", "file_path_sha256": "5df4bc7d6812a011137e858fcc84fa5ad130a07e33ebe56b27a68668d7b8ba9d"}
+{"event": "pipeline_error", "error": "test.sav", "timestamp": "2025-11-17T22:16:05.480942", "level": "info", "file_path_sha256": "5df4bc7d6812a011137e858fcc84fa5ad130a07e33ebe56b27a68668d7b8ba9d"}
+{"event": "pipeline_error", "error": "invalid.sav", "timestamp": "2025-11-17T22:16:05.490460", "level": "info", "file_path_sha256": "43890fcec9f108297d252310eccfe867a4aff9958ca25e9307ad696b2ff254da"}
+{"event": "pipeline_error", "error": "test.sav", "timestamp": "2025-11-17T22:16:05.500981", "level": "info", "file_path_sha256": "5df4bc7d6812a011137e858fcc84fa5ad130a07e33ebe56b27a68668d7b8ba9d"}
+{"event": "pipeline_error", "error": "non_existent_file.sav", "timestamp": "2025-11-17T22:21:45.240642", "level": "info", "file_path_sha256": "82875cf9caf903b6d3a37f3974be4947d879c8e1e148b5fbc9f52b21d4e657d7"}
+{"event": "pipeline_error", "error": "Object of type MagicMock is not JSON serializable", "timestamp": "2025-11-17T22:21:45.242152", "level": "info", "file_path_sha256": "5df4bc7d6812a011137e858fcc84fa5ad130a07e33ebe56b27a68668d7b8ba9d"}
+{"event": "pipeline_error", "error": "Object of type MagicMock is not JSON serializable", "timestamp": "2025-11-17T22:21:45.260852", "level": "info", "file_path_sha256": "5df4bc7d6812a011137e858fcc84fa5ad130a07e33ebe56b27a68668d7b8ba9d"}
+{"event": "pipeline_error", "error": "Invalid file format", "timestamp": "2025-11-17T22:21:45.279093", "level": "info", "file_path_sha256": "43890fcec9f108297d252310eccfe867a4aff9958ca25e9307ad696b2ff254da"}
+{"event": "pipeline_error", "error": "Permission denied", "timestamp": "2025-11-17T22:21:45.282203", "level": "info", "file_path_sha256": "5df4bc7d6812a011137e858fcc84fa5ad130a07e33ebe56b27a68668d7b8ba9d"}
