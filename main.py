@@ -38,7 +38,7 @@ def main() -> None:
         llm_api_key = st.sidebar.text_input("OpenRouter API Key", type="password")
         llm_model = st.sidebar.text_input("Model Name", value="google/gemini-2.0-flash-001")
     else:
-        llm_api_key = st.sidebar.text_input("Gemini API Key (optional)", type="password")
+        llm_api_key = st.sidebar.text_input("Gemini API Key", type="password", help="Required if not set in GEMINI_API_KEY env var")
         llm_model = "gemini-pro"
 
     # ---------------- Sidebar: analysis options ---------------- #
@@ -85,6 +85,8 @@ def main() -> None:
                 api_key=llm_api_key,
                 model_name=llm_model
             )
+            if not scales_prop:
+                st.error("No constructs were proposed. Please check your API Key (sidebar) and try again.")
             st.session_state.scales_prop = scales_prop
     else:
         scales_prop = st.session_state.scales_prop  # type: ignore

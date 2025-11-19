@@ -26,13 +26,12 @@ class Config:
             "enable_logging": os.getenv("SURVEY_TO_R_ENABLE_LOGGING", "true").lower() == "true",
             "openrouter_api_key": os.getenv("OPENROUTER_API_KEY"),
             "openrouter_model": os.getenv("OPENROUTER_MODEL", "openai/gpt-4o-mini"),
+            "gemini_api_key": os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"),
         }
     
     def get(self, key: str, default: Optional[Any] = None) -> Any:
         """Get a configuration value."""
         return self._config.get(key, default)
-    
-    def set(self, key: str, value: Any) -> None:
         """Set a configuration value."""
         self._config[key] = value
     
