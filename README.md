@@ -242,4 +242,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## Support
 
 If you encounter any issues or have questions about the application, please open an issue in the GitHub repository.
->>>>>>> 85fa2562520ce860abb9b458ca0a1792cc60c928
