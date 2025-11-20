@@ -1,5 +1,4 @@
 # Survey-to-R Agent
-<<<<<<< HEAD
 **Automated SPSS to R Syntax Converter with LLM-Powered Construct Detection**
 
 The **Survey-to-R Agent** is a powerful tool designed to streamline the process of analyzing survey data. It takes an SPSS (`.sav`) file as input, uses Large Language Models (LLMs) to automatically detect psychological constructs (scales), and generates a complete, ready-to-run R syntax file for statistical analysis.
